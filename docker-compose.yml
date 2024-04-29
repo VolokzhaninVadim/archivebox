@@ -2,14 +2,14 @@ version: '3.9'
 
 services:
     archivebox:
-        image: archivebox/archivebox:dev
+        image: archivebox/archivebox:latest
         container_name: archivebox
         command: server --quick-init 0.0.0.0:8000
         restart: unless-stopped
         # ports:
         #     - 8000:8000
         volumes:
-            - /mnt/media/archivebox:/data
+            - /mnt/media/archivebox/:/data
             # - ./etc/crontabs:/var/spool/cron/crontabs  # uncomment this and archivebox_scheduler below to set up automatic recurring archive jobs
             # - ./archivebox:/app/archivebox             # uncomment this to mount the ArchiveBox source code at runtime (for developers working on archivebox)
         # build: .                                       # uncomment this to build the image from source code at buildtime (for developers working on archivebox)
@@ -22,9 +22,9 @@ services:
             - ADMIN_PASSWORD={$ADMIN_PASSWORD_ARCHIVEBOX)
             # - PUID=911                        # set to your host user's UID & GID if you encounter permissions issues
             # - PGID=911
-            # - SEARCH_BACKEND_ENGINE=sonic     # uncomment these and sonic container below for better full-text search
-            # - SEARCH_BACKEND_HOST_NAME=sonic
-            # - SEARCH_BACKEND_PASSWORD=SomeSecretPassword
+            - SEARCH_BACKEND_ENGINE=sonic     # uncomment these and sonic container below for better full-text search
+            - SEARCH_BACKEND_HOST_NAME=sonic
+            - SEARCH_BACKEND_PASSWORD=${SONIC_ARCHIVEBOX}
             - MEDIA_MAX_SIZE=100m             # increase this filesize limit to allow archiving larger audio/video files
             - TIMEOUT=60                      # increase this number to 120+ seconds if you see many slow downloads timing out
             # - CHECK_SSL_VALIDITY=True         # set to False to disable strict SSL checking (allows saving URLs w/ broken certs)
@@ -32,9 +32,38 @@ services:
             # ...
             # add further configuration options from archivebox/config.py as needed (to apply them only to this container)
             # or set using `docker compose run archivebox config --set SOME_KEY=someval` (to persist config across all containers)
-
         networks:
-        - default
+            - default
+
+    archivebox_scheduler:
+        image: archivebox/archivebox:latest
+        command: schedule --foreground --update --every=day
+        container_name: archivebox_scheduler
+        environment:
+            - TIMEOUT=120                       # use a higher timeout than the main container to give slow tasks more time when retrying
+            # - PUID=502                        # set to your host user's UID & GID if you encounter permissions issues
+            # - PGID=20
+        volumes:
+            - /mnt/media/archivebox/:/data
+        cpus: 2                               # uncomment / edit these values to limit scheduler container resource consumption
+        mem_limit: 2048m
+        restart: always
+        networks:
+            - default
+
+    sonic:
+       image: valeriansaliou/sonic:latest
+       container_name: archivebox_sonic
+       restart: unless-stopped
+       expose:
+           - 1491
+       environment:
+           - SEARCH_BACKEND_PASSWORD=${SONIC_ARCHIVEBOX}
+       volumes:
+           - /mnt/media/archivebox/sonic.cfg:/etc/sonic.cfg:ro
+           - /mnt/media/archivebox/sonic:/var/lib/sonic/store
+       networks:
+           - default
 
 networks:
   default:
